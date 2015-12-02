@@ -1,0 +1,214 @@
+#!/bin/sh
+#******************************************************
+#*********** PITCHTRACKER *****************************
+#******************************************************
+#   THIS IS A WORK-IN-PROGRESS. IT WORKS RATHER WELL,  
+#   ALTHOUGH,  LIKE ALL PITCH TRACKING,  HAS ITS 
+#   INEXPLICABLE MOMENTS--NEEDS MORE WORK ON BACK-TRACING
+#   THE PITCH OF ONSETS.
+
+#******************** OUTPUT **************************
+
+pitch_trajectory_output_file=/tmp/pf
+
+plot_output__1_yes__0_no=0
+
+#******************************************************
+#************ OUTPUT SETTINGS ************************
+
+#......... OUTPUT UNITS ............................ 
+
+output_units=4
+# 0: freq
+# 1: octdec
+# 2: semitone deviation from reference
+# 3: inverted semitones of deviation from reference
+# 4: MIDI
+# 5: octave.pitchclass
+
+
+#.........REFERENCE FREQUENCY ............................ 
+
+reference_frequency=440
+
+# for use with output formats 2 or 3 -- see above
+
+#........OUTPUT SAMPLE RATE ............................ 
+
+ouput_trajectory_sample_rate=400
+#
+# Must be equal to or greater than analysis frame rate. 
+
+
+#........OUTPUT DATA TYPE ............................ 
+
+output_trajectory_data_type=0
+#( 0: ascii )
+#( 1: 32-bit floats )
+
+#******************** INPUT ***************************
+
+sndfile=$1
+#sndfile=~/Music/Samples/SteinwayGrandPiano/18-pno01A0.aif
+#sndfile=~/Music/Samples/SteinwayGrandPiano/18-pno87B7.aif
+#sndfile=~/violin.A5.au
+
+#........ BEGIN/END TIMES .............................
+
+begintime=0.0
+endtime=1.0
+
+analysis_frames_per_second=400
+
+#======================================================
+#*** ANALYSIS PARAMETERS ******************************
+#FFT_length=16384
+FFT_length=32768
+windowsize=0
+
+#*************** CHANNELS ****************************
+analysis_channel_1_to_max=1
+
+method_on_multiple_channels__average_0__peak_1=0
+#******************************************************
+
+#======================================================
+#*********** DETECTION PARAMETERS *********************
+#======================================================
+
+#......... DETECTION METHOD ........................... 
+
+detection_method__0_1_or_2=0
+
+# 0 = the strongest formant, or the lowest harmonic
+#	 fundamental of it, detected within the frequency 
+#	 and amplitude limits.
+# 1 = the strongest formant
+# 2 = band-limited centroid
+#	 Takes the amplitude (squared) weighted average of 
+#	 the spectrum between the low-high boundaries.
+
+#******************************************************
+
+#......... DETECTION BOUNDARIES ....................... 
+
+low_freq_or_pitch_boundary=20
+high_freq_or_pitch_boundary=10000
+#Values less than 12 are treated as octave.pitchclass. 
+
+# . . . . . MODE FILTER: FIRST PASS . . . 
+
+mode_filter_window_size_in_seconds=0.3
+#
+# To limit non-uniform spikes, set time window 
+# to a duration large enough to invoke a common value
+# region that will suppress deviant values or departures
+# from the current norm. 
+
+#......... DETECTION TIME WINDOW -- SECOND PASS 
+
+detection_window_size_minimum=.05
+detection_window_size_maximum=.2
+# (Keep range between .05 and .2, "I guess".....)
+# Functions like a mode filter--see above. 
+
+
+#......... DETECTION THRESHOLD ....................... 
+
+detection_threshold_in_decibels=-8
+#( -10 to -20, perhaps? ) ; 
+
+#****** FREQUENCY TRAJECTORY ***********************
+
+#......... PITCH TRAJECTORY SMOOTHING ................. 
+
+frequency_response_time=0.3
+
+# Lowpass filter that smooths the changes to the tracked 
+# pitch trajectory; larger values increase smoothness.
+# 0 == off. 
+
+#........ AMPLITUDE WEIGHTED RESAMPLING ............
+
+amplitude_weighted_oversampling_factor=0
+#
+# Each value in the pitch trajectory will be over-sampled  
+# up to an amplitude-determined proportion of the specified 
+# amount. For use in identifying the overall strongest
+# frequency from the entire analysis. For normal pitch tracking, 
+# set to 0, which will prevent oversampling. 
+
+
+#***** AMPLITUDE ENVELOPE **************************
+
+#........RESPONSE TIME ............................ 
+release_time_in_seconds=.0
+attack_time_in_seconds=.0
+
+#........ COMPRESSOR ............................... 
+compression_threshold_in_decibels=-18
+decibels_of_compression=-6
+
+#........GATE ..................................... 
+gate_threshold_in_decibels=-96
+
+#........WARP ....................................... 
+amplitude_envelope_warp=0
+
+
+
+#====================================================
+# COMMAND LINE SETUP -- OFFICE USE ONLY
+#      (DO NOT WRITE BELOW THIS LINE)
+#====================================================
+# ANALYSIS
+
+#
+analysisroutine=pitchtracker
+
+PVFLAGS="\
+\
+-N$FFT_length \
+-M$windowsize \
+-D$analysis_frames_per_second \
+\
+-b$begintime \
+-e$endtime \
+\
+-C$analysis_channel_1_to_max \
+\
+-f$low_freq_or_pitch_boundary \
+-F$high_freq_or_pitch_boundary \
+-L$release_time_in_seconds \
+-l$attack_time_in_seconds \
+-W$amplitude_envelope_warp \
+-G$decibels_of_compression \
+-T$compression_threshold_in_decibels \
+-S$gate_threshold_in_decibels \
+-r$ouput_trajectory_sample_rate \
+-g$output_trajectory_data_type \
+\
+-m$detection_method__0_1_or_2 \
+\
+-H$mode_filter_window_size_in_seconds \
+\
+-j$detection_window_size_minimum \
+-J$detection_window_size_maximum \
+-d$detection_threshold_in_decibels \
+\
+-O$output_units \
+-o$reference_frequency \
+\
+\
+-a$frequency_response_time \
+\
+-E$amplitude_weighted_oversampling_factor \
+\
+-X$method_on_multiple_channels__average_0__peak_1 \
+-p1 \
+-P$plot_output__1_yes__0_no \
+\
+"
+
+$analysisroutine $PVFLAGS $sndfile $pitch_trajectory_output_file ;
+

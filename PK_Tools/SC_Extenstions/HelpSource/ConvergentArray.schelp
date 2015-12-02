@@ -1,0 +1,161 @@
+TITLE:: ConvergentArray
+summary:: Collection of numeric values demonstrating the convergence of set.
+categories:: Collections
+related:: Classes/SequencableCollection, Classes/Array
+
+DESCRIPTION::
+Implementation of the following dice game:
+
+Given a particular die, we identify a number of pre-given cases or potentialities
+corresponding to the faces of the die. When we roll the die a particular case is selected
+according to an (assumedly) uniform probability of selection, whereby all potential cases
+have equal chance of being selected. Let us arbitrarily say that we have a six-sided die,
+so we have six potential cases. Each case is associated with numeric values: 1, 2, 3, 4,
+5, and 6, respectively. The proposed game unfolds in the following way:
+
+1. Determine a numeric step value (SV) that is equal to 1 divided by some integer that is greater than or equal to 1 (for instance, 1/10 = 0.1).
+
+2. Roll the die to determine a selected case (SC).
+
+3. Record the associated value (AV) of the SC and store it as the target value (TV)for each of the die’s potential cases.
+
+4. Roll the die to determine a SC.
+
+5. Apply the AV of the SC determined in step 4 to a parameter of sound generation.
+
+6. Update the AV in one of the following two ways:
+
+	i) if the TV is greater than the AV, then add the SV to the AV.
+	
+	ii) if the TV is less than the AV, then subtract the SV from the AV.
+	
+7. Change the die so that the numeric result of the previous step will be the new AV for the SC on any future rolls.
+
+
+8. Go to step 4.
+
+CLASSMETHODS::
+
+METHOD:: new
+create a new instance of ConvergentArray
+
+ARGUMENT:: col
+initial numeric collection subject to convergence/divergence of set (integer or float)
+
+ARGUMENT:: alpha
+(default: 1.0) Float specifying the curvature of the growth function, or how values approach the target
+
+ARGUMENT:: steps
+(default: 1) Integer specifying the number of steps required for each value to reach the target
+
+ARGUMENT:: flag
+(default: 1) 1 specifies convergence, -1 specifies divergence.
+
+ARGUMENT:: quantLevel
+(default: 0.0) Float specifying quantization level of values upon output
+
+ARGUMENT:: target
+(default: 'choose') Method for selecting the target or goal value. Integer or Float sets target explicitly, 'choose' makes a random choice from the existing collection of numeric values, 'find' identifies a point of deviation from the assumedly uniform probability distribution function (PDF) of the initial numeric collection.
+
+returns:: instance of ConvergentArray
+
+
+INSTANCEMETHODS::
+
+METHOD:: getConvergentSeq
+get all the steps approaching convergence for a particular value
+
+ARGUMENT:: val
+integer or float (value in the existing collection)
+
+returns:: Collection of integers or floats
+
+METHOD:: goal
+getter for the target value
+
+returns:: integer or float
+
+METHOD:: alpha
+getter/setter for the value defining the curvature of the growth function
+
+ARGUMENT:: val
+when called as a setter (alpha_(val)), set val to be the new value. 1 = linear, <1 = logarithmic, >1 = exponential growth.
+
+returns:: none
+
+METHOD:: converge_
+set flag to 1, and  converge.
+
+returns:: (describe returnvalue here)
+
+METHOD:: converged
+boolean test to see if the collection has fully converged.
+
+returns:: boolean
+
+METHOD:: isConverging
+boolean test to check if the collection is currently converging
+
+returns:: boolean
+
+METHOD:: diverge_
+set flag to -1, and  diverge.
+
+returns:: none
+
+METHOD:: isDiverging
+boolean test to check if the collection is currently diverging
+
+returns:: boolean
+
+METHOD:: diverged
+boolean test to see if the collection has fully diverged.
+
+returns:: boolean
+
+METHOD:: values
+(describe method here)
+
+returns:: (describe returnvalue here)
+
+METHOD:: next
+choose next numeric value (take a step) as determined by the growth function. Then update the step count towards convergence/divergence.
+
+ARGUMENT:: index
+optional argument to specify a particular index to select. Otherwise, selection is handled by an instance of SFRand
+
+returns:: integer or float
+
+METHOD:: quantLevel
+getter/setter for specifying the quantization level (rounding) for output values.
+
+ARGUMENT:: level
+when called as a setter(quantLevel_(level)), pass a float in the form of 0.01 to specify decimal precision.
+returns:: (describe returnvalue here)
+
+METHOD:: valueAt
+get value at a given index
+
+ARGUMENT:: index
+integer
+
+returns:: integer or float
+
+METHOD:: reset
+reset the step count, return to full divergence or convergence depending on the flag.
+
+returns:: none
+
+METHOD:: steps_
+set the number of steps till full convergence/divergence
+
+ARGUMENT:: val
+integer
+
+returns:: none
+
+EXAMPLES::
+
+code::
+(some example code)
+::

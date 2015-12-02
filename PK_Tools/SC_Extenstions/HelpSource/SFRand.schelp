@@ -1,0 +1,174 @@
+TITLE:: SFRand
+summary:: random selection object with statistical feedback
+categories:: Collections
+related:: Classes/Rand, Classes/AbstractFunction, Classes/Collection
+
+DESCRIPTION::
+SC3 Implementation of the algorithm described in:
+Polansky, Barnett, & Winter. "A Few More Words about James Tenney: Dissonant Counterpoint and Statistical Feedback" (2009).
+
+url: http://www.math.dartmouth.edu/~ahb/papers/dc.pdf
+	
+Non-Mathematical Description (Pseudo-code)
+1. Select one element from a list randomly, according to initial relative probability values (defaults to uniform weights for all elements, unless otherwise specified).
+2. Set the selected element's probability value to 0.
+3. Increse the probability values of all other elements in some deterministic way (growth function)
+4. Repeat (go to step 1).
+
+
+CLASSMETHODS::
+
+METHOD:: new
+create a new instance
+
+ARGUMENT:: col
+initial Collection of numeric values (int or float)
+
+ARGUMENT:: alpha
+alpha value determining the curvature of the growth function (incrementing probability for previously selected cases)
+
+returns:: instance of SFRand
+
+
+INSTANCEMETHODS::
+
+METHOD:: remove
+remove specified numeric value
+
+ARGUMENT:: val
+integer or float
+
+returns:: none
+
+METHOD:: add
+add numeric value to the current collection of values
+
+ARGUMENT:: val
+integer or float
+
+returns:: none
+
+METHOD:: probByValue
+get the probability that a given value is selected
+
+ARGUMENT:: val
+integer or float (of existing value)
+
+returns:: float (probability)
+
+METHOD:: values
+getter/setter method for the collection of current values
+
+ARGUMENT:: col 
+when called as a setter (values_(col)), pass new collection of numeric values 
+
+returns:: none
+
+METHOD:: next
+choose a value according to the current probability weights and then adjust the weights.
+
+returns:: integer or float
+
+METHOD:: probByIndex
+get the probability for a particular index in the current collection of numeric values
+
+ARGUMENT:: index
+integer
+
+returns:: float
+
+METHOD:: weights
+getter/setter for collection of current probability weights
+
+ARGUMENT:: col
+when called as a setter (weights_(col)), pass new collection of floats (size should equal the size of the collection of current values)
+
+returns:: Collection of floats
+
+METHOD:: reset
+clear the historical selection count and return to initial weighted probabilities for the current value collection
+
+returns:: none
+
+METHOD:: alpha
+get current alpha of growth function
+
+ARGUMENT:: alpha
+when called as a setter (alpha_(alpha)), pass new alpha value to the growth function
+
+returns:: float
+
+EXAMPLES::
+
+code::
+
+//BASIC USAGE
+//make a collection
+a = (1..12).collect{|n| n};
+
+//instatiate object
+~sfrand = SFRand.new(a, 1); //defaults to a uniform distribution with linear growth
+
+//randomly choose value according to weighted probabilities
+a = ~sfrand.next;
+
+//...and again, now taking history into account
+b = ~sfrand.next;
+
+//PROBABILITY DATA
+//get the probability that a particular value is selected
+~sfrand.probByValue(a);
+~sfrand.probByValue(b); //just selected, so the probability of it being selected again falls to 0
+
+//retrieve the probability that a particular index is selected
+~sfrand.probByIndex(0);
+
+//get probability values for all elements
+~sfrand.probabilities();
+
+//ACCESSOR METHODS
+//values
+//get list of possible values
+~sfrand.values;
+//set list of possible values
+~sfrand.values_([\a, \b, \c, \d]);
+
+//alpha
+//get current alpha of growth function
+~sfrand.alpha;
+//set new alpha
+~sfrand.alpha_(2.09);
+
+//weights
+//get current value weights - defaults to uniform
+~sfrand.weights;
+//set value weights
+(
+var newWeights = Array.fill(~sfrand.values.size, {|n| n + 1;});
+~sfrand.weights_(newWeights/newWeights.sum);
+~sfrand.weights;
+)
+
+//ADD AND REMOVE VALUES
+//Add
+//add a new value to the collection
+~sfrand.add(13).values;
+
+//take a look at the probabilities. Notice that the probability of the new value being picked is commensurate with other values that have yet to be picked
+~sfrand.probByValue(13);
+
+//also, proportional differences among the initial weights are maintained and interpolated across the new N+1 collection.
+~sfrand.weights;
+
+//Remove
+//remove a particular value from the collection
+~sfrand.remove(5).values;
+
+//again, the proportional differences among the intial weights are maintained and interpolated across the new N-1 collection.
+~sfrand.weights;
+
+//Reset
+//clear the historical selection count and return to initial weighted probabilities for the current value collection
+~sfrand.reset;
+
+::
