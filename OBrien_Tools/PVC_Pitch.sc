@@ -52,8 +52,7 @@ PVC_Pitch{
 			this.pitchtracker(iterations: soundFiles.size, fft_length: fft, ref_freq: ref, low_freq: low, high_freq: high);
 			this.runCommands;
 
-			/* SEAN: I WANT TO RUN THE FOLLOWING METHOD BUT ONLY AFTER I KNOW ALL THE PITCH TRACKS ARE DONE; SEE OTHER 'SEAN' COMMENT BELOW*/
-			//this.readFiles
+			this.readFiles;
 
 			"..........DONE!".postln;
 		}, { "NO USABLE FILES\nTRY CHANGING THE EXTENSION OR DIRECTORY".postln; });
@@ -283,24 +282,37 @@ PVC_Pitch{
 		^[fund, freq.mean]
 	}
 
-	//read pitch track files and write to file - (if needed) makes dir to store order file
-	readFiles{
-		var test = 0, tmp, fund, order, c = Condition(false);
-		order = Platform.userHomeDir ++ "/pvc_pitchFiles";
-
-		//check to see if directory of pitchtrack concat files exists
-		if(PathName(order).isFolder == false, { ("mkdir " ++ order).unixCmd; });
-		order = order ++ "/" ++ PathName(soundFiles[0]).fileName.split($\.).at(0) ++ ".order.txt";
+	checkFileExists{arg file, cond = Condition.new(false);
+		var unixCmd = "[[ -s " ++ file ++ " ]] && echo 1 || echo 0";
 
 		fork{
 			"waiting".postln;
-			//while({ File.exists(pitchTrackFiles[pitchTrackFiles.size - 1]) == false; }, { });
-			//while({ File.fileSize(pitchTrackFiles[pitchTrackFiles.size - 1]) <= 0; }, { });
+			block{|break|
+				loop{
+					if( unixCmd.unixCmdGetStdOut.asInteger == 1, { break.value; });
+					1.wait;
+				};
+			};
+			cond.test = true;
+			cond.signal;
+		};
+		^cond;
+	}
+
+	//read pitch track files and write to file - (if needed) makes dir to store order file
+	readFiles{
+		var test = 0, tmp, fund, order;
+
+		//make .txt file to write to
+		order = PathName(soundFiles[0]).pathOnly ++ "/pitch.order.txt";
+		order.postln;
+
+		fork{
+			this.checkFileExists(pitchTrackFiles[pitchTrackFiles.size - 1]).wait;
+			"ready".postln;
 
 			file = File(order, "w");
 
-			//* SEAN: here is where i need to wait before i read each .pt file to an array and then write those contents to a .txt file */
-			/* I AM TOO DUMBE [sic] TO FIGURE THIS OUT!!!! */
 			pitchTrackFiles.size.do{|n|
 				tmp = this.read(pitchTrackFiles[n]);
 				fund = this.findFund(tmp);
@@ -309,9 +321,6 @@ PVC_Pitch{
 			};
 			file.close;
 			"Done reading files\nWrote results to File".postln;
-			c.test = true;
-			c.signal;
 		};
-		^c
 	}
 }
