@@ -26,6 +26,7 @@ PVC_Pitch{
 			tmp = File(PathName(path).fullPath, "r");
 			while({ (t = tmp.getLine).notNil }, {
 				t = t.split($ );
+				//just get the path/to/sndfile and # of channels
 				soundFiles.add(t[0]); numChannels.add(t[1]);
 			});
 			tmp.close;
@@ -49,10 +50,12 @@ PVC_Pitch{
 			if(low.isNil, { low = 40.0 });
 			if(high.isNil, { high = 16000.0; });
 
-			this.pitchtracker(iterations: soundFiles.size, fft_length: fft, ref_freq: ref, low_freq: low, high_freq: high);
-			this.runCommands;
-
-			this.readFiles;
+			fork{
+				this.pitchtracker(iterations: soundFiles.size, fft_length: fft, ref_freq: ref, low_freq: low, high_freq: high);
+				this.runCommands;
+				this.checkFileExists(pitchTrackFiles[pitchTrackFiles.size - 1]).wait;
+				this.readFiles;
+			};
 
 			"..........DONE!".postln;
 		}, { "NO USABLE FILES\nTRY CHANGING THE EXTENSION OR DIRECTORY".postln; });
@@ -305,22 +308,17 @@ PVC_Pitch{
 
 		//make .txt file to write to
 		order = PathName(soundFiles[0]).pathOnly ++ "/pitch.order.txt";
-		order.postln;
 
-		fork{
-			this.checkFileExists(pitchTrackFiles[pitchTrackFiles.size - 1]).wait;
-			"ready".postln;
+		file = File(order, "w");
 
-			file = File(order, "w");
-
-			pitchTrackFiles.size.do{|n|
-				tmp = this.read(pitchTrackFiles[n]);
-				fund = this.findFund(tmp);
-				file.write("" ++ soundFiles[n] ++ " " ++ numChannels[n] ++ " " ++ fund[0] ++ " " ++ fund[1] ++ " " ++ tmp.mean ++ " ");
-				file.write("" ++ tmp.minItem ++ " " ++ tmp.maxItem ++ "\n");
-			};
-			file.close;
-			"Done reading files\nWrote results to File".postln;
+		pitchTrackFiles.size.do{|n|
+			tmp = this.read(pitchTrackFiles[n]);
+			fund = this.findFund(tmp);
+			file.write("" ++ soundFiles[n] ++ " " ++ numChannels[n] ++ " " ++ fund[0] ++ " " ++ fund[1] ++ " " ++ tmp.mean ++ " ");
+			file.write("" ++ tmp.minItem ++ " " ++ tmp.maxItem ++ "\n");
 		};
+
+		file.close;
+		"Done reading files\nWrote results to File".postln;
 	}
 }
