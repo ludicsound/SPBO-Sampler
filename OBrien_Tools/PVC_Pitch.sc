@@ -41,7 +41,7 @@ PVC_Pitch{
 			pitchTrackFiles = soundFiles.copy;
 
 			pitchTrackFiles.do({|file, i|
-				pitchTrackFiles[i] = file.replace("soundFiles", "pitchTracks").replace(".au",".pt");
+				pitchTrackFiles[i] = file.replace("soundFiles", "pitchTracks").replace("." ++ PathName(soundFiles[0]).extension.asString,".pt");
 			});
 
 			//define args - if needed
@@ -314,8 +314,9 @@ PVC_Pitch{
 		pitchTrackFiles.size.do{|n|
 			tmp = this.read(pitchTrackFiles[n]);
 			fund = this.findFund(tmp);
-			file.write("" ++ soundFiles[n] ++ " " ++ numChannels[n] ++ " " ++ fund[0] ++ " " ++ fund[1] ++ " " ++ tmp.mean ++ " ");
-			file.write("" ++ tmp.minItem ++ " " ++ tmp.maxItem ++ "\n");
+			if(fund[0] != 0, {
+				file.write("" ++ soundFiles[n] ++ " " ++ numChannels[n] ++ " " ++ fund[0] ++ " " ++ fund[1] ++ " " ++ tmp.mean ++ " " ++ tmp.minItem ++ " " ++ tmp.maxItem ++ "\n");
+			});
 		};
 
 		file.close;

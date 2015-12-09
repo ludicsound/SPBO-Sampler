@@ -1,17 +1,17 @@
 /*
-0. fix pvc_pitch to wait til all analysis is done
-1. need to re-write order functions to only include those that have equal channels
-2. write remove paths from reorder text (if channels don't line up)
-2.need to write analysis data to datafile
-3. divide algorithm
+1. div INSTANCE METHOD: fix the clip, EG. make a decision to not end sample one frame before next onset
+
+2. go back and look over methods to find a way to be more efficient, EG. re-look at prepare method (and others like it)
+
 */
 
 BenUtils{
-	var format_array;
+	var server, format_array, markers;
 	*new{ ^super.new.init }
 
 	init{ //init global vars
-		format_array = ["wav", "aiff", "aif", "au"];
+		server = Server.default;
+		format_array = ["wav", "aiff", "aif", "au", "AIFF", "WAV"];
 	}
 
 	//•••••••••••••••••••••INSTANCE METHODS•••••••••••••••••••••••••••••••••
@@ -128,10 +128,9 @@ BenUtils{
 		var cond = Condition(false), prepare, contents, tmp = List.new, outputName, size;
 		if(dir.isNil.not and: { dir.contains("order") }, {
 			contents = this.fileToArray(PathName(dir).fullPath);
-			prepare = this.prepare(dir);
+			prepare = this.prepare(PathName(dir).fullPath);
 
 			if(contents != false and: { prepare[0] }, {
-
 				contents.size.do{|i| contents[i] = contents[i].split($ ); };
 				size = contents[0].size;
 
@@ -144,7 +143,7 @@ BenUtils{
 				});
 
 				//reorder
-				contents = contents[tmp.asArray.order];
+				if(val == -1, { contents = contents.scramble; }, { contents = contents[tmp.asArray.order]; });
 
 				//create name for output file
 				tmp = PathName(dir).fileName.split($.);
@@ -170,25 +169,31 @@ BenUtils{
 		});
 	}
 
-	/*either concatenates recordings by 1. reading a directory of audio files with same extension (optional: specify ext) */
-	/* OR reads a .txt file and concats files */
+	/*concatenates recordings by either (1) reading a directory of audio files with same extension (optional: specify ext) */
+	/* OR (2) reading a .txt file with the paths to files - in order */
 	/* pre-concat normalization of audio files (norm) for both */
 	cat{|dir, ext, norm|
-		var outputName, prepare = this.prepare(dir, ext), paths, tmp;
+		var outputName, prepare = this.prepare(dir, ext), paths, file_val;
 
-		if(prepare[0], { //if dir with files that have ext
-			//if txt file is in suitable format
-			if(PathName(dir).isFile and: { PathName(dir).fileName.contains("order") }, {
-				paths = this.fileToArray(PathName(dir).fullPath);
-				if(paths != false, {
-					paths.size.do{|i| paths[i] = paths[i].split($ )[0]; };
-					outputName = PathName(dir).pathOnly ++ "concat." ++ PathName(paths[0]).extension.asString;
-				}, { outputName = dir.withoutTrailingSlash ++ "/concat." ++ prepare[1].asString; });
-
-				("CONCAT FILE PATH:  " ++ outputName).postln;
-				this.concatFiles(outputName, prepare[2], prepare[3], norm);
-			}, { "can't concat; either select a dir with suitable recordings or .txt file with paths".postln; });
+		if(PathName(dir).isFile and: { PathName(dir).fileName.contains("order") }, {
+			paths = this.fileToArray(PathName(dir).fullPath);
+			if(paths != false, {
+				paths.size.do{|i| paths[i] = paths[i].split($ ); };
+				outputName = PathName(dir).pathOnly ++ "concat." ++ PathName(paths[0][0]).extension.asString;
+				file_val = paths.copy;
+			},
+			{ outputName = dir.withoutTrailingSlash ++ "/concat." ++ prepare[1].asString; file_val = 0});
 		});
+
+		if(prepare[0] and: { file_val.isNil }, {
+			outputName = dir.withoutTrailingSlash ++ "/concat." ++ prepare[1].asString;
+			file_val = 0;
+		});
+
+		if(file_val.isNil.not, {
+			("CONCAT FILE PATH:  " ++ outputName).postln;
+			this.concatFiles(outputName, prepare[2], prepare[3], norm, file_val);
+		}, { "can't concat; either select a dir with suitable recordings or .txt file with paths".postln; });
 	}
 
 	//remove files from dir that include string
@@ -221,6 +226,24 @@ BenUtils{
 			for(0, list.size - 1, {|i| file.write(list[i] ++ "\n"); });
 			("Wrote NEW file: " ++ PathName(path).fullPath ++ "\t that DOESN'T contain: " ++ string).postln;
 			file.close;
+		});
+	}
+
+	//given a soundfile, divide it
+	div{|path, fft_size = 512, thresh = 0.5|
+		var header = this.loadSndFile(path);
+		if(header[0] != false, {
+			fork{
+				//this method defines global var markers
+				this.findOnsets(header, fft_size, thresh).wait;
+
+				this.formatOnsets(header).wait;
+				markers.postln;
+
+				//this method uses header data and global var markers to write samples
+				this.makeSamples(header).wait;
+				"done".postln;
+			};
 		});
 	}
 
@@ -267,7 +290,7 @@ BenUtils{
 
 	//returns ext of recording or false
 	getFileFormat{|dir, ext|
-		var files = dir.files, format = Array.fill(4, 0), index, tmp;
+		var files = dir.files, format = Array.fill(format_array.size, 0), index, tmp;
 		files.size.do{|i|
 			tmp = this.parse(files[i].fileName);
 			for(0, format_array.size - 1, {|j|
@@ -301,6 +324,7 @@ BenUtils{
 		array.size.do{|i|
 			sFile = SoundFile.new;
 			sFile.openRead(array[i]);
+			array[i].postln;
 
 			if(i == 0, {
 				masterSoundFileNumberOfChannels = sFile.numChannels;
@@ -350,7 +374,6 @@ BenUtils{
 		for(0, array.size - 1, {|i|
 			if(path.contains(array[i]) or: { path.split($.).includesEqual(array[i])}, { val = true; });
 		});
-
 		^val
 	}
 
@@ -365,9 +388,8 @@ BenUtils{
 		^norm
 	}
 
-	//NEED TO WRITE FILE TXT / BIN FILE THAT INCLUDES: path, start frame, duration - and anything else (all the freq info?)
 	//concatenates recordings for *cat INSTANCE METHOD
-	concatFiles{|name, chan, files, norm|
+	concatFiles{|name, chan, files, norm, file_val|
 		var path, norm_path, sFile, sFileDataTemp, dataFile;
 		var outSFile, masterSoundFile, masterSoundFileNumberOfFrames = 0;
 		fork{
@@ -378,7 +400,7 @@ BenUtils{
 
 		files.size.do{|i|
 			path = files[i];
-			dataFile.write(path.asString ++ " "); //but don't need the path - need the pitch - if avail!
+			dataFile.write(path.asString ++ " "); //write path/to/sndfile
 
 			sFile = SoundFile.new;
 
@@ -392,7 +414,14 @@ BenUtils{
 			dataFile.write(masterSoundFileNumberOfFrames.asString ++ " "); //write start frame
 			masterSoundFileNumberOfFrames = (sFile.numFrames * sFile.numChannels) + masterSoundFileNumberOfFrames;
 
-			dataFile.write((sFile.numFrames / sFile.sampleRate).asString ++ "\n"); //write duration of the sample
+			dataFile.write((sFile.numFrames / sFile.sampleRate).asString); //write duration of sndFile
+
+			//if concat from file, write remaining data to file
+			if(file_val != 0, {
+				dataFile.write(" ");
+				for(2, file_val[i].size - 2, {|j| dataFile.write(file_val[i][j].asString ++ " "); });
+				dataFile.write(file_val[i][file_val[i].size - 1].asString ++ "\n");
+			}, { dataFile.write("\n"); });
 
 			sFileDataTemp = FloatArray.fill((sFile.numFrames * sFile.numChannels), {0.0});
 			sFile.readData(sFileDataTemp);
@@ -441,6 +470,205 @@ BenUtils{
 		^PathName(item).fileName.split($.);
 	}
 
-	//divide and sample -- HAVE NOT MADE THIS YET - next step 11.13.15
-	div{}
+	//class method for .div INSTANCE METHOD
+	loadSndFile{|path|
+		var sndFile = SoundFile.new, soundFileArray, val = Array.fill(7, { false });
+		var i, filePeakAmp = (-99999999.0);
+
+		if(sndFile.openRead(path), {
+			soundFileArray = FloatArray.fill(sndFile.numFrames * sndFile.numChannels, {0.0});
+			sndFile.readData(soundFileArray);
+
+			val = [path, sndFile.numChannels, sndFile.numFrames, sndFile.sampleRate, sndFile.headerFormat, sndFile.sampleFormat, soundFileArray].copy;
+		});
+
+		sndFile.close;
+		^val;
+	}
+
+	//class method for .div INSTANCE METHOD
+	findOnsets{arg array, fft_size = 512, thresh = 0.5, cond = Condition.new(false);
+		fork{
+			var score, tmp_sndFile, duration, c;
+			var snd_path, osc_path, result_buf, size, data;
+
+			tmp_sndFile = SoundFile.openRead(array[0]);
+			duration = tmp_sndFile.duration;
+			tmp_sndFile.close;
+
+			snd_path = PathName.tmp +/+ UniqueID ++ ".aiff";
+			osc_path = PathName.tmp +/+ UniqueID ++ ".osc";
+
+			score = Score([
+				[0, (result_buf = Buffer.new(server, 1000, 1, 0)).allocMsg],
+				[0, [\d_recv, SynthDef(\onsets, {
+						var sig, fft, trig, i, timer;
+						sig = SoundIn.ar(0);
+						fft = FFT(LocalBuf(fft_size, 1), sig);
+						trig = Onsets.kr(fft, thresh);
+						i = PulseCount.kr(trig);
+						timer = Sweep.ar(1);
+						BufWr.ar(timer, result_buf, K2A.ar(i), loop: 0);
+						BufWr.kr(i, result_buf, DC.kr(0), 0);
+					}).asBytes]
+				],
+				[0, Synth.basicNew(\onsets, server, 1000).newMsg],
+				[duration, result_buf.writeMsg(snd_path, headerFormat: "AIFF", sampleFormat: "float")]
+			]);
+
+			c = Condition.new;
+
+			score.recordNRT(osc_path, "/dev/null", array[0], sampleRate: tmp_sndFile.sampleRate,
+				options: ServerOptions.new
+					.verbosity_(-1)
+					.numInputBusChannels_(tmp_sndFile.numChannels)
+				    .numOutputBusChannels_(tmp_sndFile.numChannels)
+				    .sampleRate_(tmp_sndFile.sampleRate),
+        		action: { c.unhang }
+			);
+
+    		c.hang;
+
+			tmp_sndFile = SoundFile.openRead(snd_path);
+			tmp_sndFile.readData(size = FloatArray.newClear(1));
+			size = size[0];
+			tmp_sndFile.readData(data = FloatArray.newClear(size));
+			tmp_sndFile.close;
+
+			File.delete(osc_path); File.delete(snd_path);
+
+			markers = data.copy;
+
+			cond.test = true;
+			cond.signal;
+		};
+		^cond;
+	}
+
+	formatOnsets{arg array, cond = Condition.new(false);
+		var startEnd_list = List.new;
+		fork{
+			//add beginning
+			markers = [0] ++ markers;
+
+			//convert to frames
+			markers.size.do{|i| markers[i] = (markers[i] * array[3]).round.asInteger; };
+
+			//add last frame
+			markers = markers ++ [array[2] - 1];
+
+			for(0, markers.size - 2, {|i| startEnd_list.add([markers[i], markers[i + 1] - 1]); });
+
+			markers = startEnd_list.asArray.copy;
+
+			cond.test = true;
+			cond.signal;
+		};
+		^cond;
+	}
+
+	makeSamples{arg array, cond = Condition.new(false);
+		fork{
+			var folder, startTimesFile, durationsFile, decibelsFile;
+
+			//make dir for soundfiles - if needed: check if they are there
+			folder = PathName(array[0]).pathOnly ++ "/sounds";
+			if(PathName(folder).isFolder.not, { ("mkdir " ++ folder ).unixCmd; });
+
+			//OPEN FILES FOR ASCII SAMPLE DATA
+			startTimesFile = File(PathName(array[0]).pathOnly ++ "startTimes.txt", "w");
+			durationsFile = File(PathName(array[0]).pathOnly ++ "durations.txt", "w");
+			decibelsFile = File(PathName(array[0]).pathOnly ++ "decibels.txt", "w");
+
+			//use markers
+			markers.do{|startEndFrames, soundFileNumber|
+				var sndFileArray, sampleNumberOfFrames, sampleDurationInSeconds;
+				var peaks, attackLength, releaseLength;
+				var newSoundFile, thisFileName;
+
+				sndFileArray = Array.new( (startEndFrames[1] - startEndFrames[0]) * array[1]);
+				sampleNumberOfFrames = startEndFrames[1] - startEndFrames[0] + 1;
+				sampleDurationInSeconds = (sampleNumberOfFrames.asFloat / array[3].asFloat);
+
+				//FIND PEAK AMP
+				peaks = Array.fill(array[1], { -inf });
+				for(startEndFrames[0], startEndFrames[1], {|frame|
+					var amp;
+					array[1].do{|chan|
+						amp =  array[6][ (frame * array[1])  + chan];
+						sndFileArray.add(amp);
+						if(amp.abs > peaks[chan], { peaks[chan] = amp.abs; });
+					};
+				});
+
+				attackLength = (array[1] * 0.005).round.asInteger;
+				releaseLength = (array[1] * 0.005).round.asInteger;
+
+				if( (attackLength + releaseLength) > sampleNumberOfFrames, {
+					//SCALE ATTACK AND RELEASE TO AVAILABLE SAMPLE LENGTH
+					attackLength = (sampleNumberOfFrames * 0.005 / (0.005 + releaseLength)).asInteger;
+					releaseLength = sampleNumberOfFrames - attackLength;
+				});
+
+				//ATTACK
+				for(0, attackLength, {|frame|
+					var scaler =  frame / (attackLength - 1).asFloat ;
+					array[1].do{|chan|
+						sndFileArray[(frame * array[1]) + chan] = sndFileArray[(frame * array[1]) + chan] * scaler;
+					};
+				});
+
+				//RELEASE
+				for(0, releaseLength, {|frame|
+					var scaler = frame / (releaseLength - 1).asFloat;
+					array[1].do{|chan|
+						var n = (((sndFileArray.size / array[1]).asInteger - 1 - frame) * array[1]) + chan;
+						if(n < 0, { n = 0; });
+						sndFileArray[n] = sndFileArray[n] * scaler;
+					};
+				});
+
+				//PUT IN FLOAT ARRAY
+				sndFileArray = FloatArray.fill(sndFileArray.size, {|k| sndFileArray[k]; });
+
+				//ADD SILENCE
+				if( (sampleNumberOfFrames.asFloat / array[3].asFloat ) < 0.0, {
+					sndFileArray = sndFileArray ++ FloatArray.fill( ( (0.0 * array[3].asFloat).asInteger - (sndFileArray.size / array[1]) ) * array[1], { 0.0 });
+				});
+
+				//SAVE TO A FILE
+				if(peaks.maxItem.ampdb != -inf, {
+					newSoundFile = SoundFile.new.headerFormat_(array[4]).sampleFormat_(array[5]).numChannels_(array[1]);
+
+					thisFileName = folder ++ "/" ++ PathName(array[0]).fileNameWithoutExtension ++ ".";
+
+					if(soundFileNumber < 10, { thisFileName = thisFileName ++ "00"; });
+					if(soundFileNumber < 100 and: {soundFileNumber >= 10}, { thisFileName = thisFileName ++ "0"; });
+
+					thisFileName = thisFileName ++ soundFileNumber.asString ++ "." ++ array[4].asString;
+
+					newSoundFile.openWrite(thisFileName);
+					newSoundFile.writeData(sndFileArray);
+					newSoundFile.close;
+
+					//WRITE SOUND FILE SAMPLE START TIME TO FILE
+					startTimesFile.write((startEndFrames[0].asFloat / array[3]).asString ++ "\n");
+					//WRITE SOUND FILE SAMPLE DURATION
+					durationsFile.write(sampleDurationInSeconds.asString ++ "\n");
+					//WRITE SOUND FILE SAMPLE PEAK DECIBELS LEVEL
+					decibelsFile.write(peaks.maxItem.ampdb.asString ++ "\n");
+				});
+			};
+
+			startTimesFile.close;
+			durationsFile.close;
+			decibelsFile.close;
+
+			cond.test = true;
+			cond.signal;
+		};
+		^cond;
+	}
 }
+
+
