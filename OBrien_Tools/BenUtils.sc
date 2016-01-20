@@ -1,8 +1,6 @@
 /*
-1. div INSTANCE METHOD: fix the clip, EG. make a decision to not end sample one frame before next onset
-
-2. go back and look over methods to find a way to be more efficient, EG. re-look at prepare method (and others like it)
-
+fix formatOnsets method - group and remove duplicate segments:
+A question of either take all audio - including silences - or only include "meaningful" onsets and their grouping. . .
 */
 
 BenUtils{
@@ -230,14 +228,16 @@ BenUtils{
 	}
 
 	//given a soundfile, divide it
-	div{|path, fft_size = 512, thresh = 0.5|
+	//hop_size is in frames
+	div{|path, fft_size = 512, thresh = 0.5, hop_size = 5|
 		var header = this.loadSndFile(path);
 		if(header[0] != false, {
 			fork{
 				//this method defines global var markers
 				this.findOnsets(header, fft_size, thresh).wait;
+				markers.postln;
 
-				this.formatOnsets(header).wait;
+				this.formatOnsets(header, hop_size).wait;
 				markers.postln;
 
 				//this method uses header data and global var markers to write samples
@@ -417,7 +417,7 @@ BenUtils{
 			dataFile.write((sFile.numFrames / sFile.sampleRate).asString); //write duration of sndFile
 
 			//if concat from file, write remaining data to file
-			if(file_val != 0, {
+			if(file_val != 0 and: { file_val[i].size > 2 }, {
 				dataFile.write(" ");
 				for(2, file_val[i].size - 2, {|j| dataFile.write(file_val[i][j].asString ++ " "); });
 				dataFile.write(file_val[i][file_val[i].size - 1].asString ++ "\n");
@@ -489,10 +489,11 @@ BenUtils{
 	//class method for .div INSTANCE METHOD
 	findOnsets{arg array, fft_size = 512, thresh = 0.5, cond = Condition.new(false);
 		fork{
-			var score, tmp_sndFile, duration, c;
+			var score, tmp_sndFile, duration, sampRate, c;
 			var snd_path, osc_path, result_buf, size, data;
 
 			tmp_sndFile = SoundFile.openRead(array[0]);
+			sampRate = tmp_sndFile.sampleRate;
 			duration = tmp_sndFile.duration;
 			tmp_sndFile.close;
 
@@ -507,7 +508,8 @@ BenUtils{
 						fft = FFT(LocalBuf(fft_size, 1), sig);
 						trig = Onsets.kr(fft, thresh);
 						i = PulseCount.kr(trig);
-						timer = Sweep.ar(1);
+						//timer = Sweep.ar(1); //count in sec
+						timer = (Sweep.ar(1) * sampRate).round(1); //count in frames
 						BufWr.ar(timer, result_buf, K2A.ar(i), loop: 0);
 						BufWr.kr(i, result_buf, DC.kr(0), 0);
 					}).asBytes]
@@ -545,19 +547,45 @@ BenUtils{
 		^cond;
 	}
 
-	formatOnsets{arg array, cond = Condition.new(false);
-		var startEnd_list = List.new;
+	//because the onsets were only detected in the first channel, we only look at amps in first channel
+	formatOnsets{arg array, hop_size, cond = Condition.new(false);
+		var size, startEnd_list = List.new;
 		fork{
-			//add beginning
-			markers = [0] ++ markers;
+			//# of frames
+			("frames: " ++ array[2] ++ "\tdata_size: " + array[6].size).postln;
+			("hop_size: " ++ hop_size).postln;
 
-			//convert to frames
-			markers.size.do{|i| markers[i] = (markers[i] * array[3]).round.asInteger; };
+			//convert hope_size from ms to frames
+			//size = ( (hop_size / 100) * array[3]).round(1);
 
-			//add last frame
-			markers = markers ++ [array[2] - 1];
+			markers.size.do{|i|
+				var avg, len, start, end;
+				start = end = markers[i];
 
-			for(0, markers.size - 2, {|i| startEnd_list.add([markers[i], markers[i + 1] - 1]); });
+				avg = array[6][start].abs;
+				while({ (start > 0) && (avg > -80.dbamp) }, {
+					avg = 0;
+					if( (start - hop_size) > 0, { len = hop_size; }, { len = start; });
+
+					for(0, len - 1, {|j| avg = avg + array[6][start - j].abs; });
+
+					avg = avg / len;
+					if( (start - hop_size) > 0, { start = start - hop_size; }, { start = 0; });
+				});
+
+				avg = array[6][end].abs;
+				while({ (end < (array[2] - 1)) && (avg > -80.dbamp) }, {
+					avg = 0;
+					if( (end + hop_size) < (array[2] - 1), { len = hop_size; }, { len = (array[2] - 1) - end; });
+
+					for(0, len - 1, {|j| avg = avg + array[6][end + j].abs; });
+
+					avg = avg / len;
+					if( (end + hop_size) < (array[2] - 1), { end = end + hop_size; }, { end = array[2] - 1; });
+				});
+
+				if(start != end, { startEnd_list.add([start, end])});
+			};
 
 			markers = startEnd_list.asArray.copy;
 
