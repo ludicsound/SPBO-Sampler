@@ -549,7 +549,8 @@ BenUtils{
 
 	//because the onsets were only detected in the first channel, we only look at amps in first channel
 	formatOnsets{arg array, hop_size, cond = Condition.new(false);
-		var size, startEnd_list = List.new;
+		var size, startEnd_list = List.new, tmp = List.new;
+
 		fork{
 			//# of frames
 			("frames: " ++ array[2] ++ "\tdata_size: " + array[6].size).postln;
@@ -588,6 +589,31 @@ BenUtils{
 			};
 
 			markers = startEnd_list.asArray.copy;
+
+			for(0, markers.size - 1, {|j|
+				for(0, startEnd_list.size - 1, {|k|
+					var x, y;
+					//if the difference between the start of a sample is less than hop_size converted to secs
+					//then make a new sample that covers the greatest # of frames
+					if( (markers[j][0] - startEnd_list[k][0]).abs < ((hop_size / 100) * array[3]), {
+						if( markers[j][0] < startEnd_list[k][0], { x = markers[j][0]; }, { x = startEnd_list[k][0]; });
+						if( markers[j][1] > startEnd_list[k][1], { y = markers[j][1]; }, { y = startEnd_list[k][1]; });
+						markers[j] = [x, y];
+					});
+				});
+			});
+
+			//remove any duplicates
+			for(0, markers.size - 1, {|j| if(tmp.asArray.includesEqual(markers[j]).not, { tmp.add(markers[j]); }); });
+			markers = tmp.asArray.copy;
+
+			//throw out all samples < 0.02 seconds
+			tmp = List.new;
+			for(0, markers.size - 1, {|j|
+				if( ((markers[j][1] - markers[j][0]) / array[3]) > 0.02, { tmp.add(markers[j]); });
+			});
+
+			markers = tmp.asArray.copy;
 
 			cond.test = true;
 			cond.signal;
