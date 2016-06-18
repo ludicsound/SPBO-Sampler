@@ -86,6 +86,20 @@ BenUtils{
 		^order.asArray;
 	}
 
+	appendTxt{|dir, val|
+		var tmp, line, outputName, list = List.new;
+		if(PathName(dir).isFile, {
+			tmp = this.fileToArray(dir.asString);
+
+			for(0, tmp.size - 1, {|i|
+				if(tmp[i].includesEqual($ ), { line = tmp[i].split($ ); });
+				list.add(line ++ (i + val))
+			});
+			outputName = PathName(dir).pathOnly ++ "append.order.txt";
+			this.arrayToFile(list.asArray, outputName);
+		}, { "nope".postln; });
+	}
+
 	/* reads all .txt files in a dir and writes a single file in dir */
 	/* optional - searches each /path/to/recording and only includes those that contain a specified string from 'string' */
 	/* NOTE: 'string' can be a single string or an array of "strings" */
@@ -229,7 +243,7 @@ BenUtils{
 
 	//given a soundfile, divide it
 	//hop_size is in frames
-	div{|path, fft_size = 512, thresh = 0.5, hop_size = 5|
+	div{|path, fft_size = 1024, thresh = 0.5, hop_size = 20|
 		var header = this.loadSndFile(path);
 		if(header[0] != false, {
 			fork{
@@ -400,7 +414,7 @@ BenUtils{
 
 		files.size.do{|i|
 			path = files[i];
-			dataFile.write(path.asString ++ " "); //write path/to/sndfile
+			//dataFile.write(path.asString ++ " "); //write path/to/sndfile
 
 			sFile = SoundFile.new;
 
@@ -419,7 +433,7 @@ BenUtils{
 			//if concat from file, write remaining data to file
 			if(file_val != 0 and: { file_val[i].size > 2 }, {
 				dataFile.write(" ");
-				for(2, file_val[i].size - 2, {|j| dataFile.write(file_val[i][j].asString ++ " "); });
+				(file_val[i].size - 3).do{|j| dataFile.write(file_val[i][j].asString ++ " "); };
 				dataFile.write(file_val[i][file_val[i].size - 1].asString ++ "\n");
 			}, { dataFile.write("\n"); });
 
@@ -480,6 +494,7 @@ BenUtils{
 			sndFile.readData(soundFileArray);
 
 			val = [path, sndFile.numChannels, sndFile.numFrames, sndFile.sampleRate, sndFile.headerFormat, sndFile.sampleFormat, soundFileArray].copy;
+			//val.size.do{|i| val[i].postln; };
 		});
 
 		sndFile.close;
@@ -548,72 +563,49 @@ BenUtils{
 	}
 
 	//because the onsets were only detected in the first channel, we only look at amps in first channel
-	formatOnsets{arg array, hop_size, cond = Condition.new(false);
+	formatOnsets{arg array, cond = Condition.new(false);
 		var size, startEnd_list = List.new, tmp = List.new;
 
 		fork{
 			//# of frames
 			("frames: " ++ array[2] ++ "\tdata_size: " + array[6].size).postln;
-			("hop_size: " ++ hop_size).postln;
-
-			//convert hope_size from ms to frames
-			//size = ( (hop_size / 100) * array[3]).round(1);
 
 			markers.size.do{|i|
-				var avg, len, start, end;
-				start = end = markers[i];
+				var index, min, start, end, mark, tmp;
 
-				avg = array[6][start].abs;
-				while({ (start > 0) && (avg > -80.dbamp) }, {
-					avg = 0;
-					if( (start - hop_size) > 0, { len = hop_size; }, { len = start; });
+				min = array[6][markers[i]].abs;
+				("onset frame: " ++ markers[i] ++ "\t amplitude: " ++ min).postln;
 
-					for(0, len - 1, {|j| avg = avg + array[6][start - j].abs; });
+				if(min.ampdb > -96, {
+					//start
+					if(i == 0, { mark = 0; }, { mark = startEnd_list.last[1]; });
 
-					avg = avg / len;
-					if( (start - hop_size) > 0, { start = start - hop_size; }, { start = 0; });
+					start = index = markers[i];
+
+					while({index > mark}, {
+						tmp = array[6][index].abs;
+						if(tmp < min, { min = tmp; start = index; });
+						index = index - 1;
+					});
+
+					//end
+					if(i == (markers.size - 1), { mark = (array[2] - 1); }, { mark = (markers[i + 1] - 1); });
+
+					end = index = markers[i]; //reset
+					min = array[6][index].abs; //reset
+
+					while({index < mark}, {
+						tmp = array[6][index].abs;
+						if(tmp < min, { min = tmp; end = index; });
+						index = index + 1;
+					});
+
+					//add
+					startEnd_list.add([start, end]);
 				});
-
-				avg = array[6][end].abs;
-				while({ (end < (array[2] - 1)) && (avg > -80.dbamp) }, {
-					avg = 0;
-					if( (end + hop_size) < (array[2] - 1), { len = hop_size; }, { len = (array[2] - 1) - end; });
-
-					for(0, len - 1, {|j| avg = avg + array[6][end + j].abs; });
-
-					avg = avg / len;
-					if( (end + hop_size) < (array[2] - 1), { end = end + hop_size; }, { end = array[2] - 1; });
-				});
-
-				if(start != end, { startEnd_list.add([start, end])});
 			};
 
 			markers = startEnd_list.asArray.copy;
-
-			for(0, markers.size - 1, {|j|
-				for(0, startEnd_list.size - 1, {|k|
-					var x, y;
-					//if the difference between the start of a sample is less than hop_size converted to secs
-					//then make a new sample that covers the greatest # of frames
-					if( (markers[j][0] - startEnd_list[k][0]).abs < ((hop_size / 100) * array[3]), {
-						if( markers[j][0] < startEnd_list[k][0], { x = markers[j][0]; }, { x = startEnd_list[k][0]; });
-						if( markers[j][1] > startEnd_list[k][1], { y = markers[j][1]; }, { y = startEnd_list[k][1]; });
-						markers[j] = [x, y];
-					});
-				});
-			});
-
-			//remove any duplicates
-			for(0, markers.size - 1, {|j| if(tmp.asArray.includesEqual(markers[j]).not, { tmp.add(markers[j]); }); });
-			markers = tmp.asArray.copy;
-
-			//throw out all samples < 0.02 seconds
-			tmp = List.new;
-			for(0, markers.size - 1, {|j|
-				if( ((markers[j][1] - markers[j][0]) / array[3]) > 0.02, { tmp.add(markers[j]); });
-			});
-
-			markers = tmp.asArray.copy;
 
 			cond.test = true;
 			cond.signal;
@@ -649,7 +641,7 @@ BenUtils{
 				for(startEndFrames[0], startEndFrames[1], {|frame|
 					var amp;
 					array[1].do{|chan|
-						amp =  array[6][ (frame * array[1])  + chan];
+						amp = array[6][ (frame * array[1]) + chan];
 						sndFileArray.add(amp);
 						if(amp.abs > peaks[chan], { peaks[chan] = amp.abs; });
 					};
