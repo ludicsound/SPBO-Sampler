@@ -242,8 +242,8 @@ BenUtils{
 	}
 
 	//given a soundfile, divide it
-	//hop_size is in frames
-	div{|path, fft_size = 1024, thresh = 0.5, hop_size = 20|
+	//onset detection args: fft_size; (amp) thresh;
+	div{|path, fft_size = 1024, thresh = 0.5|
 		var header = this.loadSndFile(path);
 		if(header[0] != false, {
 			fork{
@@ -251,7 +251,7 @@ BenUtils{
 				this.findOnsets(header, fft_size, thresh).wait;
 				markers.postln;
 
-				this.formatOnsets(header, hop_size).wait;
+				this.formatOnsets(header).wait;
 				markers.postln;
 
 				//this method uses header data and global var markers to write samples
@@ -564,7 +564,7 @@ BenUtils{
 
 	//because the onsets were only detected in the first channel, we only look at amps in first channel
 	formatOnsets{arg array, cond = Condition.new(false);
-		var size, startEnd_list = List.new, tmp = List.new;
+		var startEnd_list = List.new;
 
 		fork{
 			//# of frames
@@ -576,12 +576,11 @@ BenUtils{
 				min = array[6][markers[i]].abs;
 				("onset frame: " ++ markers[i] ++ "\t amplitude: " ++ min).postln;
 
-				if(min.ampdb > -96, {
+				if(min.ampdb > -96, { //min amp for detected onset - precaution
 					//start
 					if(i == 0, { mark = 0; }, { mark = startEnd_list.last[1]; });
 
 					start = index = markers[i];
-
 					while({index > mark}, {
 						tmp = array[6][index].abs;
 						if(tmp < min, { min = tmp; start = index; });
@@ -593,7 +592,6 @@ BenUtils{
 
 					end = index = markers[i]; //reset
 					min = array[6][index].abs; //reset
-
 					while({index < mark}, {
 						tmp = array[6][index].abs;
 						if(tmp < min, { min = tmp; end = index; });
@@ -716,5 +714,3 @@ BenUtils{
 		^cond;
 	}
 }
-
-
