@@ -1,8 +1,6 @@
 /*
-1. div INSTANCE METHOD: fix the clip, EG. make a decision to not end sample one frame before next onset
-
-2. go back and look over methods to find a way to be more efficient, EG. re-look at prepare method (and others like it)
-
+fix formatOnsets method - group and remove duplicate segments:
+A question of either take all audio - including silences - or only include "meaningful" onsets and their grouping. . .
 */
 
 BenUtils{
@@ -86,6 +84,20 @@ BenUtils{
 			});
 		});
 		^order.asArray;
+	}
+
+	appendTxt{|dir, val|
+		var tmp, line, outputName, list = List.new;
+		if(PathName(dir).isFile, {
+			tmp = this.fileToArray(dir.asString);
+
+			for(0, tmp.size - 1, {|i|
+				if(tmp[i].includesEqual($ ), { line = tmp[i].split($ ); });
+				list.add(line ++ (i + val))
+			});
+			outputName = PathName(dir).pathOnly ++ "append.order.txt";
+			this.arrayToFile(list.asArray, outputName);
+		}, { "nope".postln; });
 	}
 
 	/* reads all .txt files in a dir and writes a single file in dir */
@@ -230,12 +242,14 @@ BenUtils{
 	}
 
 	//given a soundfile, divide it
-	div{|path, fft_size = 512, thresh = 0.5|
+	//onset detection args: fft_size; (amp) thresh;
+	div{|path, fft_size = 1024, thresh = 0.5|
 		var header = this.loadSndFile(path);
 		if(header[0] != false, {
 			fork{
 				//this method defines global var markers
 				this.findOnsets(header, fft_size, thresh).wait;
+				markers.postln;
 
 				this.formatOnsets(header).wait;
 				markers.postln;
@@ -400,7 +414,7 @@ BenUtils{
 
 		files.size.do{|i|
 			path = files[i];
-			dataFile.write(path.asString ++ " "); //write path/to/sndfile
+			//dataFile.write(path.asString ++ " "); //write path/to/sndfile
 
 			sFile = SoundFile.new;
 
@@ -417,9 +431,9 @@ BenUtils{
 			dataFile.write((sFile.numFrames / sFile.sampleRate).asString); //write duration of sndFile
 
 			//if concat from file, write remaining data to file
-			if(file_val != 0, {
+			if(file_val != 0 and: { file_val[i].size > 2 }, {
 				dataFile.write(" ");
-				for(2, file_val[i].size - 2, {|j| dataFile.write(file_val[i][j].asString ++ " "); });
+				(file_val[i].size - 3).do{|j| dataFile.write(file_val[i][j].asString ++ " "); };
 				dataFile.write(file_val[i][file_val[i].size - 1].asString ++ "\n");
 			}, { dataFile.write("\n"); });
 
@@ -480,6 +494,7 @@ BenUtils{
 			sndFile.readData(soundFileArray);
 
 			val = [path, sndFile.numChannels, sndFile.numFrames, sndFile.sampleRate, sndFile.headerFormat, sndFile.sampleFormat, soundFileArray].copy;
+			//val.size.do{|i| val[i].postln; };
 		});
 
 		sndFile.close;
@@ -489,10 +504,11 @@ BenUtils{
 	//class method for .div INSTANCE METHOD
 	findOnsets{arg array, fft_size = 512, thresh = 0.5, cond = Condition.new(false);
 		fork{
-			var score, tmp_sndFile, duration, c;
+			var score, tmp_sndFile, duration, sampRate, c;
 			var snd_path, osc_path, result_buf, size, data;
 
 			tmp_sndFile = SoundFile.openRead(array[0]);
+			sampRate = tmp_sndFile.sampleRate;
 			duration = tmp_sndFile.duration;
 			tmp_sndFile.close;
 
@@ -507,7 +523,8 @@ BenUtils{
 						fft = FFT(LocalBuf(fft_size, 1), sig);
 						trig = Onsets.kr(fft, thresh);
 						i = PulseCount.kr(trig);
-						timer = Sweep.ar(1);
+						//timer = Sweep.ar(1); //count in sec
+						timer = (Sweep.ar(1) * sampRate).round(1); //count in frames
 						BufWr.ar(timer, result_buf, K2A.ar(i), loop: 0);
 						BufWr.kr(i, result_buf, DC.kr(0), 0);
 					}).asBytes]
@@ -545,19 +562,46 @@ BenUtils{
 		^cond;
 	}
 
+	//because the onsets were only detected in the first channel, we only look at amps in first channel
 	formatOnsets{arg array, cond = Condition.new(false);
 		var startEnd_list = List.new;
+
 		fork{
-			//add beginning
-			markers = [0] ++ markers;
+			//# of frames
+			("frames: " ++ array[2] ++ "\tdata_size: " + array[6].size).postln;
 
-			//convert to frames
-			markers.size.do{|i| markers[i] = (markers[i] * array[3]).round.asInteger; };
+			markers.size.do{|i|
+				var index, min, start, end, mark, tmp;
 
-			//add last frame
-			markers = markers ++ [array[2] - 1];
+				min = array[6][markers[i]].abs;
+				("onset frame: " ++ markers[i] ++ "\t amplitude: " ++ min).postln;
 
-			for(0, markers.size - 2, {|i| startEnd_list.add([markers[i], markers[i + 1] - 1]); });
+				if(min.ampdb > -96, { //min amp for detected onset - precaution
+					//start
+					if(i == 0, { mark = 0; }, { mark = startEnd_list.last[1]; });
+
+					start = index = markers[i];
+					while({index > mark}, {
+						tmp = array[6][index].abs;
+						if(tmp < min, { min = tmp; start = index; });
+						index = index - 1;
+					});
+
+					//end
+					if(i == (markers.size - 1), { mark = (array[2] - 1); }, { mark = (markers[i + 1] - 1); });
+
+					end = index = markers[i]; //reset
+					min = array[6][index].abs; //reset
+					while({index < mark}, {
+						tmp = array[6][index].abs;
+						if(tmp < min, { min = tmp; end = index; });
+						index = index + 1;
+					});
+
+					//add
+					startEnd_list.add([start, end]);
+				});
+			};
 
 			markers = startEnd_list.asArray.copy;
 
@@ -595,7 +639,7 @@ BenUtils{
 				for(startEndFrames[0], startEndFrames[1], {|frame|
 					var amp;
 					array[1].do{|chan|
-						amp =  array[6][ (frame * array[1])  + chan];
+						amp = array[6][ (frame * array[1]) + chan];
 						sndFileArray.add(amp);
 						if(amp.abs > peaks[chan], { peaks[chan] = amp.abs; });
 					};
@@ -670,5 +714,3 @@ BenUtils{
 		^cond;
 	}
 }
-
-
