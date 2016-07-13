@@ -4,12 +4,12 @@ import sqlite3
 import itertools
 from subprocess import Popen, PIPE
 
-m_sampExt = [".aif", ".aiff", ".wav"]
-
 class sample:
  	pass
  	
 class db:
+
+####HOUSEKEEPING STUFF
 	def __init__(self, sd):
 		try: 
 			self.conn = sqlite3.connect('sample_lib.db')
@@ -17,20 +17,25 @@ class db:
 			exit(1)
 		self.sampLibDir = sd
 		self.cursor = self.conn.cursor()
-		#self.sc_getTableNames()
+		self.audioFileExtensions = [".aif", ".aiff", ".wav", ".au", ".WAV", ".AIFF", ".AIF", ".AU"]
+		self.getTableNames() #initiallizes self.tables
 	
 	def execute(self, cmd):
 		self.cursor.execute(cmd)
 		self.conn.commit()
-		
-	def sc_getTableNames(self):
+
+####TABLE methods
+	def getTableNames(self):
 		self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name!='sqlite_sequence' ORDER BY name")
 		self.tables = []
 		sql_tables = self.cursor.fetchall()
 		for table in sql_tables:
 			self.tables.append(str(table).split("\'")[1])
+	
+	def sc_getAllInstr(self):
 		print self.tables;
 	
+	#get all data from a specified table
 	def getTable(self, lib):
 		try:	
 			self.cursor.execute("SELECT * FROM " + str(lib))
@@ -40,7 +45,8 @@ class db:
 		except:
 			print "ERROR: No table called \'" + lib + "\'"
 			self.sc_getTableNames()
-			
+
+	#instrument data formated for SC InstrumentLibrary
 	def sc_getTableData(self, lib):	
 		self.cursor.execute("SELECT pitch, path FROM " + str(lib))
 		self.instrData = []
@@ -53,6 +59,7 @@ class db:
 		for data in self.instrData: print data
 		print "];)"
 
+	#remove an instrument from the library
 	def dropTable(self, name):
 		try:
 			cmd = "DROP TABLE " + name
@@ -61,10 +68,13 @@ class db:
 			print "ERROR: No table called \'" + name + "\'"
 			self.sc_getTableNames()
 
+	#CREATE A NEW INSTRUMENT as a NEW TABLE
 	def createTable(self, name):
 		cmd = "CREATE TABLE " + name + " (id integer primary key autoincrement, pitch real, path text, channels integer, sample_rate integer, bits integer, frames integer, peak real, material text, dynamic text, range text)"
 		self.execute(cmd)		
 	
+####BUILD AN INSTRUMENT 
+	#INSERT NEW SAMPLE INTO INSTRUMENT TABLE
 	def insertSample(self, lib, sampInfo):
 		self.cursor.execute("SELECT id, path FROM " + str(lib) + " WHERE pitch=\'" + str(round(float(sampInfo.pitch), 2)) + "\'")
 		self.instrData = []
@@ -91,6 +101,7 @@ class db:
 				sampInfo.range)
 			self.execute(cmd)
 	
+	#USE libSndFile TO GRAB SAMPLE DATA
 	def getSampInfo(self, infile):
 		questions = ['Sample Rate', 'Frames', 'Channels', 'Sample Size', 'Bit Width', 'Signal Max']
 		answers = ['sample_rate', 'frames', 'channels', 'bits', 'bits', 'peak']
@@ -106,7 +117,8 @@ class db:
 					line = [elem for elem in line.rstrip().split(" ") if elem != '' and elem != ':'  ]
 					setattr(sampInfo, a, line[value].strip('('))
 		return sampInfo
-		
+	
+	#AUTOMATED PITCH DETECTION using PVC_Plus
 	def getPitch(self, infile):
 		p = Popen(['./S.pitchtracker', infile], stdout=PIPE)
 		pitches = []
@@ -121,7 +133,8 @@ class db:
 		if len(pitches) > 0: mean = sum(pitches)/len(pitches)
 		else: print "PVC Error"
 		return mean #float(line[5])
-		
+	
+	#SCAN THE SAMPLE LIBRARY and IDENTIFY DIRECTORIES CONTAINING AUDIO FILES
 	def scanDir(self, lib=""):
 		listing = glob.glob(os.path.abspath(os.path.join(self.sampLibDir, "*")))
 		print "Available Sample Directories: \n"
@@ -136,7 +149,7 @@ class db:
 				scanDir(infile)
 			else: 
 				extension = os.path.splitext(infile)[1]
-				if extension in m_sampExt:
+				if extension in self.audioFileExtensions:
 					renamedFile = infile
 					for j in [' ', ')', '(']: 
 						renamedFile = renamedFile.replace(j, '_')
@@ -148,6 +161,7 @@ class db:
 		print "Found " + str(len(audioFiles)) + " audio files."
 		return (str.upper(lib.replace('/', '_')), audioFiles)
 	
+	#DETERMINE SAMPLE VARIENT DATA
 	def insertSamples(self, (lib, audioFiles), proceed=None, material=None, dynamic=None, range=None, pitched=None, pitch_specification_method=None, enum_start=None, enum_offset=None):
 		if len(audioFiles) <= 0:
 			print "no audio files were found --->>> nothing to add. goodbye!"
@@ -162,14 +176,14 @@ class db:
 					done = True
 				elif proceed == "n" or proceed == "no":  
 					print "goodbye!"
-					exit(1)	
+					exit(1)
 				else:
 					print "please enter 'y' or 'n'"
 		self.createTable(lib)
-		if material is None: str(raw_input("material? "))
-		if dynamic is None: str(raw_input("dynamic level? "))
-		if range is None: str(raw_input("frequency range (hi, mid, low)? "))
-		if pitched is None: str(raw_input("Are the samples pitched(y/n): "))
+		if material is None: material = str(raw_input("material? "))
+		if dynamic is None: dynamic = str(raw_input("dynamic level? "))
+		if range is None: range = str(raw_input("frequency range (hi, mid, low)? "))
+		if pitched is None: pitched = str(raw_input("Are the samples pitched(y/n): "))
 		metaTags = dict([ ("material", material), ("dynamic", dynamic), ("range", range) ])
 		done = False
 		while not done:
@@ -202,6 +216,7 @@ class db:
 					self.insertSample(lib, sampInfo)
 				done = True
 			else:
-				print "please enter 'y' or 'n'"			
+				print "please enter 'y' or 'n'"
+				pitched = str(raw_input("Are the samples pitched(y/n): "))		
 		self.getTable(lib);
 		

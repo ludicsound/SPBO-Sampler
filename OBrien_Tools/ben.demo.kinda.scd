@@ -1,5 +1,5 @@
 //1. init - go line by line and you'll need to file in your own dir
-~path = "path/to/audio/files"
+~path = "/Users/Sean/Music/Samples/crotales/"
 a = BenUtils.new;
 
 /*2. - looks in directory and makes a .txt file with the /path/to/audio/file and channel # */

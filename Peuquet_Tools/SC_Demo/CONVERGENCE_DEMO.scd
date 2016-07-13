@@ -4,7 +4,7 @@
 //A. start the server.
 s.boot;
 //B. Drag and Drop the /Python directory into the object constructor to pass the path to the SC class.
-~il = InstrumentLibrary.new(s, "/Users/Sean/Software/PEUQUET_TechnicalProject_CCT_TechDir/Python");
+~il = InstrumentLibrary.new(s, "/Users/Sean/Software/SPBO-Sampler/Peuquet_Tools/Python");
 //C. load samples (wait for them to finish in the post window)
 (
 Routine.new{
@@ -13,6 +13,8 @@ Routine.new{
 	~instr = ~il.lib[\STEINWAYGRANDPIANO];
 }.play(SystemClock);
 )
+
+~il.instrNames;
 
 //STEP 2
 //pass two synthdefs to the server.
@@ -41,21 +43,21 @@ SynthDef("instrMono", { |bufnum, amp = 1.0, pan = 0.0, dbOffset = 0|
 	Out.ar(0, sig);
 }, variants:
 	(
-	CROTALES: [dbOffset: -3]
+	CROTALES: [dbOffset: -3],
+	WOODBLOCK: [dbOffset: -3]
 	)
 ).add;
 )
 
 //STEP 3
 //play a piano note: middle C, sensitive to microtonal pitch deviation, limited transposition within a range of + or - 3 semitones.
-a = Synth("simple", [\bufnum, ~instr.getLimitedBuf(60, 3)]);
+a = Synth("instrMono", [\bufnum, ~instr.getLimitedBuf(60, 3)]);
 
 //STEP 4
 //Do something more advanced, i.e. play all the notes in sequence running from low to high.
 (
 r = Routine.new({
-	88.do{arg pitch;
-		pitch = pitch + 21;
+	(21..108).do{arg pitch;
 		a = Synth(~instr.getName(), [
 			\bufnum, ~instr.getLimitedBuf(pitch, 3),
 			\amp, 0.7,

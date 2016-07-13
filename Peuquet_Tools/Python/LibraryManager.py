@@ -1,19 +1,22 @@
 import sample_lib
 import sys
 
-if str(sys.argv[1])=="build":
+arg = None;
+
+try:
+	arg = str(sys.argv[1])
+except:
+	print "***** USAGE: python LibraryManager.py <path to samples> [or] 'build'"
+	exit(1)
+		
+if arg =="build":
 	print "BUILD library!"
 	SAMPLE_DIRECTORY = "SAMPLES/"
 	m_lib = sample_lib.db(SAMPLE_DIRECTORY);
-	m_lib.sc_getTableNames();
 	m_lib.insertSamples(m_lib.scanDir("crotales"), "y", "metal", "f", "hi", "y", "b", 84, 0.5);
 	m_lib.insertSamples(m_lib.scanDir("SteinwayGrandPiano"), "y", "string", "mf", "all", "y", "b", 21, 1);
 else:
-	try:
-		SAMPLE_DIRECTORY = str(sys.argv[1])
-	except:
-		print "***** USAGE: python LibraryManager.py <path to samples>"
-		exit(1)
+	SAMPLE_DIRECTORY = arg;
 
 print "\n************ SAMPLE LIBRARY MANAGER v 0.0.2 ******************"
 print "VALID COMMAND OPTIONS: 'add', 'drop', 'show', 'quit'"
